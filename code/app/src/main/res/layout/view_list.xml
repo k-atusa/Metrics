@@ -4,32 +4,40 @@
     style="@style/vbox"
     android:layout_height="match_parent"
     android:padding="16dp"
-    tools:context=".ListActivity">
+    tools:context=".Listview">
 
     <LinearLayout
         style="@style/hbox"
         android:layout_marginTop="24dp"
         android:layout_marginBottom="16dp">
 
-        <TextView
-            style="@style/title"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:textSize="32dp"/>
+        <ImageButton
+            android:id="@+id/button_change"
+            style="@style/icon"
+            android:contentDescription="view change button"
+            android:layout_marginStart="16dp"
+            android:src="@drawable/icon_change" />
 
         <ImageButton
             android:id="@+id/button_new"
             style="@style/icon"
-            android:contentDescription="new file button"
-            android:layout_marginStart="8dp"
+            android:contentDescription="new folder button"
+            android:layout_marginStart="16dp"
             android:src="@drawable/icon_add" />
 
         <ImageButton
-            android:id="@+id/button_import"
+            android:id="@+id/button_reset"
             style="@style/icon"
-            android:contentDescription="import file button"
-            android:layout_marginStart="8dp"
-            android:src="@drawable/icon_upload" />
+            android:contentDescription="account reset button"
+            android:layout_marginStart="16dp"
+            android:src="@drawable/icon_account" />
+
+        <TextView
+            android:id="@+id/text_mode"
+            style="@style/title"
+            android:text="Mode"
+            android:layout_marginStart="16dp"
+            android:padding="12dp"/>
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView

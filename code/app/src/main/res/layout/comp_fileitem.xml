@@ -18,7 +18,7 @@
     <ImageButton
         android:id="@+id/btn_delete"
         style="@style/iconDan"
-        android:src="@drawable/icon_delete"
         android:contentDescription="delete"
-        android:padding="12dp"/>
+        android:padding="12dp"
+        android:src="@drawable/icon_delete" />
 </LinearLayout>

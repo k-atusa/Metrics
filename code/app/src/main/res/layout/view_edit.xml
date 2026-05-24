@@ -4,7 +4,7 @@
     style="@style/vbox"
     android:layout_height="match_parent"
     android:padding="16dp"
-    tools:context=".EditActivity">
+    tools:context=".Textview">
 
     <!-- Header: Title and Actions -->
     <LinearLayout
@@ -27,12 +27,6 @@
             style="@style/icon"
             android:contentDescription="save"
             android:src="@drawable/icon_check" />
-
-        <ImageButton
-            android:id="@+id/button_export"
-            style="@style/icon"
-            android:contentDescription="export"
-            android:src="@drawable/icon_download" />
     </LinearLayout>
 
     <!-- Content: Note Editor -->

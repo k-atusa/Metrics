@@ -1,11 +1,6 @@
-package com.example.k7metrics;
 // test793d : USAG-Lib bencrypt
+package com.example.k7metrics;
 
-/*
-* external library BouncyCastle is required
-* desktop: lib/bclib.jar
-* android: gradle dependency org.bouncycastle:bcprov-jdk18on:1.84
-*/
 import com.lambdapioneer.argon2kt.Argon2Kt;
 import com.lambdapioneer.argon2kt.Argon2KtResult;
 import com.lambdapioneer.argon2kt.Argon2Mode;
@@ -77,6 +72,17 @@ import org.bouncycastle.pqc.crypto.mldsa.MLDSAPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.mldsa.MLDSASigner;
 
 public class Bencrypt {
+    private static volatile Object DUMMY;
+
+    private static void sclear(byte[] data) {
+        java.util.Arrays.fill(data, (byte) 0);
+        DUMMY = data;
+    }
+
+    public static void ClearDummy() {
+        DUMMY = null;
+    }
+
     // ========== Helpers ==========
     private static byte[] mkiv(byte[] g, long c) {
         byte[] iv = Arrays.copyOf(g, 12); // base IV 12B
@@ -139,6 +145,88 @@ public class Bencrypt {
         return result;
     }
 
+    // ========== Data Masker ==========
+    public static class Masker {
+        private static volatile Masker instance = null; // singleton
+        private static final int[] PRIME_CANDIDATES = {
+                15485863, 32452843, 86028121, 104395301,
+                179424673, 228017633, 236887691, 345098717,
+                413158511, 481230491, 563117203, 693240851,
+                715225741, 812349821, 882046271, 999999937
+        };
+        private int poolSize;
+        private byte[] pool;
+        private int prime;
+
+        private Masker(int poolSizeMb) {
+            this.poolSize = poolSizeMb * 1024 * 1024;
+            Bencrypt rg = new Bencrypt();
+            this.pool = rg.Random(this.poolSize);
+            byte[] randByte = rg.Random(1);
+            int randomIndex = Byte.toUnsignedInt(randByte[0]) % 16;
+            this.prime = PRIME_CANDIDATES[randomIndex];
+        }
+
+        public static Masker GetMasker(int poolSizeMb) {
+            if (instance == null) {
+                synchronized (Masker.class) {
+                    if (instance == null) {
+                        instance = new Masker(poolSizeMb);
+                    }
+                }
+            }
+            return instance;
+        }
+
+        public static Masker GetMasker() {
+            return GetMasker(8);
+        }
+
+        public byte[] XOR(byte[] data) {
+            if (data == null) {
+                return null;
+            }
+            int L = data.length;
+            if (L == 0) {
+                return data;
+            }
+            if (L == 1) {
+                byte[] result = new byte[1];
+                result[0] = (byte) (data[0] ^ this.pool[this.prime % this.poolSize]);
+                return result;
+            }
+            if (L > this.poolSize) {
+                throw new IllegalArgumentException("Data " + L + " exceeds Pool " + this.poolSize);
+            }
+            int mid = L / 2;
+            byte[] left = java.util.Arrays.copyOfRange(data, 0, mid);
+            byte[] right = java.util.Arrays.copyOfRange(data, mid, L);
+
+            // 5-Round Feistel Network
+            for (int round = 0; round < 5; round++) {
+                long seed = 0;
+                for (int i = 0; i < right.length; i++) {
+                    int b = Byte.toUnsignedInt(right[i]);
+                    seed = (seed + (long) b * (i + 1)) % this.poolSize;
+                }
+
+                byte[] newLeft = new byte[left.length];
+                for (int i = 0; i < left.length; i++) {
+                    int poolIdx = (int) ((seed + (long) i * this.prime) % this.poolSize);
+                    newLeft[i] = (byte) (left[i] ^ this.pool[poolIdx]);
+                }
+
+                left = right;
+                right = newLeft;
+            }
+
+            byte[] finalResult = new byte[L];
+            System.arraycopy(right, 0, finalResult, 0, right.length);
+            System.arraycopy(left, 0, finalResult, right.length, left.length);
+            return finalResult; // re-order for odd length
+        }
+    }
+
     // ========== Hash Functions Master ==========
     public static class HashMaster {
         private String algo;
@@ -169,6 +257,7 @@ public class Bencrypt {
                 System.arraycopy(salt, 0, combined, 0, salt.length);
                 System.arraycopy(pw, 0, combined, salt.length, pw.length);
                 master = Bencrypt.SHA3512(combined);
+                sclear(combined);
 
             } else if (this.algo.equals("pbk2")) {
                 lblStore = "PWHASH_PBK2";
@@ -184,10 +273,10 @@ public class Bencrypt {
                 return new byte[0][0];
             }
 
-            return new byte[][] {
-                    Bencrypt.genkey(master, lblStore, this.hashSize),
-                    Bencrypt.genkey(master, lblKeygen, this.keySize)
-            };
+            byte[] pwStored = Bencrypt.genkey(master, lblStore, this.hashSize);
+            byte[] keyGen = Bencrypt.genkey(master, lblKeygen, this.keySize);
+            sclear(master);
+            return new byte[][] { pwStored, keyGen };
         }
     }
 
@@ -287,6 +376,7 @@ public class Bencrypt {
     public static class SymMaster {
         private String algo;
         private byte[] key;
+        private Masker mask;
         private Bencrypt.AES1 worker;
 
         /**
@@ -301,7 +391,8 @@ public class Bencrypt {
                 throw new IllegalArgumentException("Key length must be 44 bytes (12B IV + 32B Key)");
             }
             this.algo = algo;
-            this.key = key;
+            this.mask = Masker.GetMasker();
+            this.key = this.mask.XOR(key); // saved as XOR masked
             this.worker = new Bencrypt.AES1();
         }
 
@@ -326,48 +417,60 @@ public class Bencrypt {
 
         // Encrypt binary data (Memory)
         public byte[] EnBin(byte[] data) throws Exception {
+            byte[] key = this.mask.XOR(this.key);
             if (this.algo.equals("gcm1")) {
-                return this.worker.enAESGCM(this.key, data);
+                byte[] res = this.worker.enAESGCM(key, data);
+                sclear(key);
+                return res;
             } else {
                 java.io.ByteArrayInputStream in = new java.io.ByteArrayInputStream(data);
                 java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-                this.worker.enAESGCMx(this.key, in, data.length, out, 1048576);
+                this.worker.enAESGCMx(key, in, data.length, out, 1048576);
+                sclear(key);
                 return out.toByteArray();
             }
         }
 
         // Decrypt binary data (Memory)
         public byte[] DeBin(byte[] data) throws Exception {
+            byte[] key = this.mask.XOR(this.key);
             if (this.algo.equals("gcm1")) {
-                return this.worker.deAESGCM(this.key, data);
+                byte[] res = this.worker.deAESGCM(key, data);
+                sclear(key);
+                return res;
             } else {
                 java.io.ByteArrayInputStream in = new java.io.ByteArrayInputStream(data);
                 java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-                this.worker.deAESGCMx(this.key, in, data.length, out, 1048576);
+                this.worker.deAESGCMx(key, in, data.length, out, 1048576);
+                sclear(key);
                 return out.toByteArray();
             }
         }
 
         // Encrypt Stream/File
         public void EnFile(InputStream src, long size, OutputStream dst) throws Exception {
+            byte[] key = this.mask.XOR(this.key);
             if (this.algo.equals("gcm1")) {
                 byte[] buf = src.readNBytes((int) size);
-                byte[] enc = this.worker.enAESGCM(this.key, buf);
+                byte[] enc = this.worker.enAESGCM(key, buf);
                 dst.write(enc);
             } else {
-                this.worker.enAESGCMx(this.key, src, size, dst, 1048576);
+                this.worker.enAESGCMx(key, src, size, dst, 1048576);
             }
+            sclear(key);
         }
 
         // Decrypt Stream/File
         public void DeFile(InputStream src, long size, OutputStream dst) throws Exception {
+            byte[] key = this.mask.XOR(this.key);
             if (this.algo.equals("gcm1")) {
                 byte[] buf = src.readNBytes((int) size);
-                byte[] dec = this.worker.deAESGCM(this.key, buf);
+                byte[] dec = this.worker.deAESGCM(key, buf);
                 dst.write(dec);
             } else {
-                this.worker.deAESGCMx(this.key, src, size, dst, 1048576);
+                this.worker.deAESGCMx(key, src, size, dst, 1048576);
             }
+            sclear(key);
         }
     }
 
@@ -404,6 +507,7 @@ public class Bencrypt {
             byte[] iv = Arrays.copyOfRange(key, 0, 12);
             byte[] keyBytes = Arrays.copyOfRange(key, 12, 44);
             byte[] result = inlineEnc(keyBytes, iv, data);
+            sclear(keyBytes);
             this.processed.set(data.length);
             return result;
         }
@@ -418,6 +522,7 @@ public class Bencrypt {
             byte[] iv = Arrays.copyOfRange(key, 0, 12);
             byte[] keyBytes = Arrays.copyOfRange(key, 12, 44);
             byte[] result = inlineDec(keyBytes, iv, data);
+            sclear(keyBytes);
             this.processed.set(data.length);
             return result;
         }
@@ -473,6 +578,7 @@ public class Bencrypt {
 
             } finally { // 6. Close Thread x8 Pool
                 executor.shutdown();
+                sclear(globalKey);
             }
         }
 
@@ -527,6 +633,7 @@ public class Bencrypt {
 
             } finally { // 6. Close Thread x8 Pool
                 executor.shutdown();
+                sclear(globalKey);
             }
         }
     }
@@ -783,8 +890,10 @@ public class Bencrypt {
 
             // 3. KDF & Encrypt
             byte[] gcmKey = Bencrypt.genkey(sharedSecret, "KEYGEN_ECC1_ENCRYPT", 44);
+            sclear(sharedSecret);
             Bencrypt.SymMaster worker = new Bencrypt.SymMaster("gcm1", gcmKey);
             byte[] enc = worker.EnBin(data);
+            sclear(gcmKey);
 
             // 4. Pack
             byte[] ephPubRaw = ephPub.getEncoded(); // 56 bytes
@@ -813,8 +922,11 @@ public class Bencrypt {
 
             // 4. KDF & Decrypt
             byte[] gcmKey = Bencrypt.genkey(sharedSecret, "KEYGEN_ECC1_ENCRYPT", 44);
+            sclear(sharedSecret);
             Bencrypt.SymMaster worker = new Bencrypt.SymMaster("gcm1", gcmKey);
-            return worker.DeBin(enc);
+            byte[] res = worker.DeBin(enc);
+            sclear(gcmKey);
+            return res;
         }
 
         // ECC sign: Ed448
@@ -847,17 +959,14 @@ public class Bencrypt {
         public Ed448PublicKeyParameters pubEd = null;
         public Ed448PrivateKeyParameters priEd = null;
 
-        // Lightweight PQC Key Objects
-        private MLKEMPublicKeyParameters kemPub = null;
-        private MLKEMPrivateKeyParameters kemPri = null;
-        private MLDSAPublicKeyParameters dsaPub = null;
-        private MLDSAPrivateKeyParameters dsaPri = null;
-
         // PQC Raw Key Bytes
         public byte[] pubKEM = null;
         public byte[] priKEM = null;
         public byte[] pubDSA = null;
         public byte[] priDSA = null;
+
+        // PQC keys will be unmasked and directly used in Lightweight PQC Key Objects
+        private Masker mask = Masker.GetMasker();
 
         public byte[][] genkey() throws Exception {
             SecureRandom rnd = new SecureRandom();
@@ -884,19 +993,19 @@ public class Bencrypt {
             MLKEMKeyPairGenerator kemKpg = new MLKEMKeyPairGenerator();
             kemKpg.init(new MLKEMKeyGenerationParameters(rnd, MLKEMParameters.ml_kem_1024));
             AsymmetricCipherKeyPair kemKp = kemKpg.generateKeyPair();
-            this.kemPub = (MLKEMPublicKeyParameters) kemKp.getPublic();
-            this.kemPri = (MLKEMPrivateKeyParameters) kemKp.getPrivate();
-            this.pubKEM = this.kemPub.getEncoded();
-            this.priKEM = this.kemPri.getEncoded();
+            MLKEMPublicKeyParameters kemPub = (MLKEMPublicKeyParameters) kemKp.getPublic();
+            MLKEMPrivateKeyParameters kemPri = (MLKEMPrivateKeyParameters) kemKp.getPrivate();
+            this.pubKEM = kemPub.getEncoded();
+            this.priKEM = kemPri.getEncoded();
 
             // 3. ML-DSA-87 key generation
             MLDSAKeyPairGenerator dsaKpg = new MLDSAKeyPairGenerator();
             dsaKpg.init(new MLDSAKeyGenerationParameters(rnd, MLDSAParameters.ml_dsa_87));
             AsymmetricCipherKeyPair dsaKp = dsaKpg.generateKeyPair();
-            this.dsaPub = (MLDSAPublicKeyParameters) dsaKp.getPublic();
-            this.dsaPri = (MLDSAPrivateKeyParameters) dsaKp.getPrivate();
-            this.pubDSA = this.dsaPub.getEncoded();
-            this.priDSA = this.dsaPri.getEncoded();
+            MLDSAPublicKeyParameters dsaPub = (MLDSAPublicKeyParameters) dsaKp.getPublic();
+            MLDSAPrivateKeyParameters dsaPri = (MLDSAPrivateKeyParameters) dsaKp.getPrivate();
+            this.pubDSA = dsaPub.getEncoded();
+            this.priDSA = dsaPri.getEncoded();
 
             // 4. Join keys (Public: 4273B, Private: 8177B)
             byte[] pubB = new byte[4273];
@@ -911,6 +1020,9 @@ public class Bencrypt {
             System.arraycopy(this.priKEM, 0, priB, 113, 3168);
             System.arraycopy(this.priDSA, 0, priB, 3281, 4896);
 
+            // 5. Mask keys
+            this.priKEM = this.mask.XOR(this.priKEM);
+            this.priDSA = this.mask.XOR(this.priDSA);
             return new byte[][] { pubB, priB };
         }
 
@@ -922,10 +1034,6 @@ public class Bencrypt {
                 this.pubEd = new Ed448PublicKeyParameters(Arrays.copyOfRange(publicBuf, 56, 113), 0);
                 this.pubKEM = Arrays.copyOfRange(publicBuf, 113, 1681);
                 this.pubDSA = Arrays.copyOfRange(publicBuf, 1681, 4273);
-
-                // No JCA wrappers, Direct Lightweight Load
-                this.kemPub = new MLKEMPublicKeyParameters(MLKEMParameters.ml_kem_1024, this.pubKEM);
-                this.dsaPub = new MLDSAPublicKeyParameters(MLDSAParameters.ml_dsa_87, this.pubDSA);
             }
             if (privateBuf != null) {
                 if (privateBuf.length != 8177)
@@ -935,9 +1043,9 @@ public class Bencrypt {
                 this.priKEM = Arrays.copyOfRange(privateBuf, 113, 3281);
                 this.priDSA = Arrays.copyOfRange(privateBuf, 3281, 8177);
 
-                // No JCA wrappers, Direct Lightweight Load
-                this.kemPri = new MLKEMPrivateKeyParameters(MLKEMParameters.ml_kem_1024, this.priKEM);
-                this.dsaPri = new MLDSAPrivateKeyParameters(MLDSAParameters.ml_dsa_87, this.priDSA);
+                // mask keys
+                this.priKEM = this.mask.XOR(this.priKEM);
+                this.priDSA = this.mask.XOR(this.priDSA);
             }
         }
 
@@ -958,7 +1066,8 @@ public class Bencrypt {
 
             // 2. ML-KEM-1024 Encapsulation
             MLKEMGenerator kemGen = new MLKEMGenerator(rnd);
-            SecretWithEncapsulation kemSec = kemGen.generateEncapsulated(this.kemPub);
+            MLKEMPublicKeyParameters kemPub = new MLKEMPublicKeyParameters(MLKEMParameters.ml_kem_1024, this.pubKEM);
+            SecretWithEncapsulation kemSec = kemGen.generateEncapsulated(kemPub);
             byte[] ssvKEM = kemSec.getSecret();
             byte[] kemEnc = kemSec.getEncapsulation();
 
@@ -968,8 +1077,12 @@ public class Bencrypt {
             System.arraycopy(ssvKEM, 0, combinedSecret, ssvECC.length, ssvKEM.length);
 
             byte[] gcmKey = Bencrypt.genkey(combinedSecret, "KEYGEN_PQC1_ENCRYPT", 44);
+            sclear(ssvECC);
+            sclear(ssvKEM);
+            sclear(combinedSecret);
             Bencrypt.SymMaster worker = new Bencrypt.SymMaster("gcm1", gcmKey);
             byte[] enc = worker.EnBin(data);
+            sclear(gcmKey);
 
             byte[] tempPubB = tempPub.getEncoded();
             byte[] res = new byte[tempPubB.length + kemEnc.length + enc.length];
@@ -993,7 +1106,10 @@ public class Bencrypt {
             agreement.calculateAgreement(tempXKey, ssvECC, 0);
 
             // ML-KEM-1024 Decapsulation
-            MLKEMExtractor kemExt = new MLKEMExtractor(this.kemPri);
+            byte[] priKEMt = this.mask.XOR(this.priKEM);
+            MLKEMPrivateKeyParameters kemPri = new MLKEMPrivateKeyParameters(MLKEMParameters.ml_kem_1024, priKEMt);
+            sclear(priKEMt);
+            MLKEMExtractor kemExt = new MLKEMExtractor(kemPri);
             byte[] ssvKEM = kemExt.extractSecret(kemEnc);
 
             // 3. Hybrid KDF & Decryption
@@ -1002,8 +1118,13 @@ public class Bencrypt {
             System.arraycopy(ssvKEM, 0, combinedSecret, ssvECC.length, ssvKEM.length);
 
             byte[] gcmKey = Bencrypt.genkey(combinedSecret, "KEYGEN_PQC1_ENCRYPT", 44);
+            sclear(ssvECC);
+            sclear(ssvKEM);
+            sclear(combinedSecret);
             Bencrypt.SymMaster worker = new Bencrypt.SymMaster("gcm1", gcmKey);
-            return worker.DeBin(enc);
+            byte[] res = worker.DeBin(enc);
+            sclear(gcmKey);
+            return res;
         }
 
         public byte[] sign(byte[] data) throws Exception {
@@ -1017,7 +1138,10 @@ public class Bencrypt {
 
             // ML-DSA-87
             MLDSASigner mlSigner = new MLDSASigner();
-            mlSigner.init(true, new ParametersWithRandom(this.dsaPri, rnd));
+            byte[] priDSAt = this.mask.XOR(this.priDSA);
+            MLDSAPrivateKeyParameters dsaPri = new MLDSAPrivateKeyParameters(MLDSAParameters.ml_dsa_87, priDSAt);
+            sclear(priDSAt);
+            mlSigner.init(true, new ParametersWithRandom(dsaPri, rnd));
             mlSigner.update(data, 0, data.length);
             byte[] mlSgn = mlSigner.generateSignature();
 
@@ -1043,7 +1167,8 @@ public class Bencrypt {
 
                 // ML-DSA-87 verify
                 MLDSASigner mlSigner = new MLDSASigner();
-                mlSigner.init(false, this.dsaPub);
+                MLDSAPublicKeyParameters dsaPub = new MLDSAPublicKeyParameters(MLDSAParameters.ml_dsa_87, this.pubDSA);
+                mlSigner.init(false, dsaPub);
                 mlSigner.update(data, 0, data.length);
                 return mlSigner.verifySignature(mlSgn);
             } catch (Exception e) {

@@ -16,6 +16,17 @@ import java.util.zip.CRC32;
 
 // Opsec header handler
 public class Opsec {
+    private static volatile Object DUMMY;
+
+    private static void sclear(byte[] data) {
+        java.util.Arrays.fill(data, (byte) 0);
+        DUMMY = data;
+    }
+
+    public static void ClearDummy() {
+        DUMMY = null;
+    }
+
     // Outer Layer
     public String Msg; // non-secured message
     public byte[] MsgInfo; // additional info (for RSA-mode)
@@ -356,9 +367,10 @@ public class Opsec {
         }
 
         // get pwhash & header key, encrypt header
-        byte[] combinedPw = (kf == null || kf.length == 0) ? pw : concat(pw, kf);
+        byte[] combinedPw = (kf == null || kf.length == 0) ? pw.clone() : concat(pw, kf);
         Bencrypt.HashMaster hm = new Bencrypt.HashMaster(method);
         byte[][] keys = hm.KDF(combinedPw, salt);
+        sclear(combinedPw);
         pwHash = keys[0];
         byte[] hkey = keys[1];
 
@@ -366,6 +378,8 @@ public class Opsec {
         byte[] headData = wrapEncHead();
         Bencrypt.SymMaster sm = new Bencrypt.SymMaster("gcm1", hkey);
         encHeadData = sm.EnBin(headData);
+        sclear(hkey);
+        sclear(headData);
 
         // wrap header
         Map<String, byte[]> cfg = new HashMap<>();
@@ -396,6 +410,7 @@ public class Opsec {
             // sign to [hal][peerPub][smsg][sinf]
             byte[] signTgt = concat(strToBytes(method), peerPub, strToBytes(Smsg), SmsgInfo);
             sign = am.Sign(signTgt);
+            sclear(signTgt);
         }
 
         // encrypt header
@@ -410,10 +425,12 @@ public class Opsec {
 
             Bencrypt.SymMaster sm = new Bencrypt.SymMaster("gcm1", hkey);
             encHeadData = sm.EnBin(headData);
+            sclear(hkey);
         } else {
             // ECC/PQC Hybrid: Handled internally
             encHeadData = am.Encrypt(headData);
         }
+        sclear(headData);
 
         // wrap header
         Map<String, byte[]> cfg = new HashMap<>();
@@ -449,11 +466,12 @@ public class Opsec {
     public void Decpw(byte[] pw, byte[] kf) throws Exception {
         if (headAlgo.isEmpty())
             throw new IllegalStateException("Call view() first");
-        byte[] combinedPw = (kf == null || kf.length == 0) ? pw : concat(pw, kf);
+        byte[] combinedPw = (kf == null || kf.length == 0) ? pw.clone() : concat(pw, kf);
 
         // check parameters, get header key
         Bencrypt.HashMaster hm = new Bencrypt.HashMaster(headAlgo);
         byte[][] keys = hm.KDF(combinedPw, salt);
+        sclear(combinedPw);
         byte[] calcHash = keys[0];
         byte[] hkey = keys[1];
 
@@ -470,9 +488,11 @@ public class Opsec {
         // decrypt header
         Bencrypt.SymMaster sm = new Bencrypt.SymMaster("gcm1", hkey);
         byte[] decryptedHead = sm.DeBin(encHeadData);
+        sclear(hkey);
         if (decryptedHead == null)
             throw new SecurityException("AES decryption failed");
         unwrapEncHead(decryptedHead);
+        sclear(decryptedHead);
     }
 
     // decrypt with private key, verify if public key is not null
@@ -490,6 +510,7 @@ public class Opsec {
             byte[] hkey = am.Decrypt(MsgInfo);
             Bencrypt.SymMaster sm = new Bencrypt.SymMaster("gcm1", hkey);
             decryptedHead = sm.DeBin(encHeadData);
+            sclear(hkey);
         } else {
             decryptedHead = am.Decrypt(encHeadData);
         }
@@ -497,6 +518,7 @@ public class Opsec {
         if (decryptedHead == null)
             throw new SecurityException("Decryption failed");
         unwrapEncHead(decryptedHead);
+        sclear(decryptedHead);
 
         // verify sign
         if (myPub == null && peerPub == null)

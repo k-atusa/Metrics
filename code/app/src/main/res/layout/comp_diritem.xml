@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/hbox"
+    android:background="@drawable/draw_rectangle"
+    android:layout_marginBottom="8dp"
+    android:paddingEnd="8dp"
+    android:clickable="true"
+    android:focusable="true">
+
+    <TextView
+        android:id="@+id/text_item"
+        style="@style/body"
+        android:layout_width="0dp"
+        android:layout_weight="1"
+        android:padding="12dp"/>
+
+    <ImageButton
+        android:id="@+id/btn_rename"
+        style="@style/icon"
+        android:contentDescription="rename"
+        android:padding="12dp"
+        android:src="@drawable/icon_change" />
+</LinearLayout>

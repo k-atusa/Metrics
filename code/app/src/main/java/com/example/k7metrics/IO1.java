@@ -1,3 +1,4 @@
+// test814a : USAG-KOX IO1
 package com.example.k7metrics;
 
 import android.content.ContentValues;
@@ -24,7 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-// USAG-IO1 R1, supports Android15+ (API 35+)
+// USAG-IO1, supports Android15+ (API 35+)
 public class IO1 {
 
     // Abstract File for processing both external and internal storage
