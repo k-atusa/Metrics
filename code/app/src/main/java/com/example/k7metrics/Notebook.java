@@ -82,6 +82,8 @@ public class Notebook {
         if (acc.containsKey("salt")) this.Salt = acc.get("salt");
         if (acc.containsKey("pwh")) this.PwHash = acc.get("pwh");
         if (acc.containsKey("emk")) this.EncMasterKey = acc.get("emk");
+
+        ClearDummy();
     }
     public void SaveAccount() throws Exception {
         // make encoded account data
@@ -100,6 +102,8 @@ public class Notebook {
         try (java.io.OutputStream os = a.OpenWriter(this.context, false)) {
             ops.Write(os, encoded);
         }
+
+        ClearDummy();
     }
 
     // access field
@@ -143,6 +147,7 @@ public class Notebook {
                     new Handler(Looper.getMainLooper()).post(() -> callback.accept(e));
                 }
             }
+            ClearDummy();
         }).start();
     }
     public void SetPW(String pw, Consumer<Exception> callback) {
@@ -202,6 +207,7 @@ public class Notebook {
                     new Handler(Looper.getMainLooper()).post(() -> callback.accept(e));
                 }
             }
+            ClearDummy();
         }).start();
     }
 
@@ -241,6 +247,7 @@ public class Notebook {
         } finally {
             sclear(mk);
         }
+        ClearDummy();
     }
     public void SaveTexts() throws Exception {
         // prepare workers
@@ -273,6 +280,7 @@ public class Notebook {
             os.write(encBody);
             Opsec.PadFile(os, Opsec.PadLen(head.length + encBody.length + 6)); // 6 is YAS2 header overhead
         }
+        ClearDummy();
     }
     public String[] GetTextsTitles() {
         String[] titles = this.Texts.keySet().toArray(new String[0]);
@@ -335,6 +343,7 @@ public class Notebook {
         if (!this.Names[pos].containsKey("")) {
             this.Names[pos].put("", "folder" + pos);
         }
+        ClearDummy();
     }
     public void SaveNames(int pos) throws Exception {
         // check folder title
@@ -379,6 +388,7 @@ public class Notebook {
             os.write(encBody);
             Opsec.PadFile(os, Opsec.PadLen(head.length + encBody.length + 6)); // 6 is YAS2 header overhead
         }
+        ClearDummy();
     }
     public String[] GetDirNames() {
         String[] res = new String[8];
@@ -477,6 +487,7 @@ public class Notebook {
                     new Handler(Looper.getMainLooper()).post(() -> callback.accept(e));
                 }
             }
+            ClearDummy();
         }).start();
     }
     public void ExportFile(int pos, String filename, Consumer<Exception> callback) {
@@ -520,6 +531,7 @@ public class Notebook {
                     new Handler(Looper.getMainLooper()).post(() -> callback.accept(e));
                 }
             }
+            ClearDummy();
         }).start();
     }
     public byte[] ReadFile(int pos, String filename, long szLimit) throws Exception {
@@ -553,6 +565,7 @@ public class Notebook {
             return os.toByteArray();
         } finally {
             sclear(mk);
+            ClearDummy();
         }
     }
 }
