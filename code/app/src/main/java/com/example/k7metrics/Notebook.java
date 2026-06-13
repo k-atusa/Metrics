@@ -1,4 +1,3 @@
-// test816b : project USAG metrics
 package com.example.k7metrics;
 
 import android.content.Context;
