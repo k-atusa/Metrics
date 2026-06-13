@@ -18,6 +18,7 @@ project USAG: Metrics Vault android version
 
 - Default password: `0000`
 - Disable vault: set `exchange rate` as odd integer
+- ScreenPW is saved as plaintext. You must set RealPW differently.
 
 ## Build Executable
 
