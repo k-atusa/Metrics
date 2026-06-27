@@ -1,4 +1,4 @@
-# Metrics v1.0.0
+# Metrics v1.1.0
 
 project USAG: Metrics Vault android version
 

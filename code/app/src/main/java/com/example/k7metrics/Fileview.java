@@ -116,7 +116,7 @@ public class Fileview extends AppCompatActivity {
                 // 3. Connect and Send using TP1
                 sock.MakeConnection(ip, port);
                 shs = Bencode.NormPW(secret);
-                TP1 tp = new TP1(TP1.HASH_ARG2 | TP1.SYM_GCM1 | TP1.ASYM_PQC1, true, true, shs, sock.Conn);
+                TP1 tp = new TP1(TP1.HASH_ARG2_ST | TP1.SYM_GCM1 | TP1.ASYM_PQC1, true, true, shs, sock.Conn);
 
                 java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(data);
                 TP1.TP1Result res = tp.Send(bais, data.length, "", null);

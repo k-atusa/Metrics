@@ -107,7 +107,7 @@ public class Notebook {
 
     // access field
     public static final String BASIC_PW = "0000";
-    public static final String METHOD_HASH = "arg2";
+    public static final String METHOD_HASH = "arg2st";
     public static final String METHOD_HASH_INTERNAL = "sha3";
     public static final String METHOD_SYM = "gcmx1";
     public static final String METHOD_SYM_INTERNAL = "gcm1";
@@ -250,7 +250,7 @@ public class Notebook {
     }
     public void SaveTexts() throws Exception {
         // prepare workers
-        Bencrypt.SymMaster sm = new Bencrypt.SymMaster(METHOD_SYM_INTERNAL, new byte[44]);
+        Bencrypt.SymMaster sm = new Bencrypt.SymMaster(METHOD_SYM_INTERNAL, new byte[32]);
         Opsec ops = new Opsec();
         HashMap<String, byte[]> temp = new HashMap<>();
         for (String key : this.Texts.keySet()) temp.put(key, this.Texts.get(key).getBytes(StandardCharsets.UTF_8));
@@ -363,7 +363,7 @@ public class Notebook {
         }
 
         // get opsec header
-        Bencrypt.SymMaster sm = new Bencrypt.SymMaster(METHOD_SYM_INTERNAL, new byte[44]);
+        Bencrypt.SymMaster sm = new Bencrypt.SymMaster(METHOD_SYM_INTERNAL, new byte[32]);
         ops.BodySize = sm.AfterSize(payload.length);
         ops.BodyAlgo = METHOD_SYM_INTERNAL;
         byte[] mk = this.mask.XOR(this.masterKey);
@@ -439,7 +439,7 @@ public class Notebook {
                 Opsec ops = new Opsec();
                 ops.BodyAlgo = METHOD_SYM;
                 long srcSize = src.GetSize(this.context);
-                Bencrypt.SymMaster smSize = new Bencrypt.SymMaster(METHOD_SYM, new byte[44]);
+                Bencrypt.SymMaster smSize = new Bencrypt.SymMaster(METHOD_SYM, new byte[32]);
                 ops.BodySize = smSize.AfterSize(srcSize);
 
                 byte[] mk = this.mask.XOR(this.masterKey);
